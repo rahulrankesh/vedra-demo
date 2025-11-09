@@ -15,7 +15,6 @@ st.caption("One Answer. Many Minds.")
 # Load keys
 OPENAI_KEY = st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
 SERPAPI_KEY = st.secrets.get("SERPAPI_KEY") or os.getenv("SERPAPI_KEY")
-COHERE_KEY = st.secrets.get("COHERE_API_KEY") or os.getenv("COHERE_API_KEY")
 
 client = OpenAI(api_key=OPENAI_KEY)
 
@@ -26,10 +25,9 @@ privacy = st.toggle("Privacy Mode (no data stored)", value=True)
 if query:
     with st.spinner("Gathering intelligence from multiple AIs..."):
 
-        # Define defaults (prevents NameError)
+        # Define defaults
         gpt_ans = ""
         serp_ans = ""
-        coh_ans = ""
 
         # ------------------- OPENAI -------------------
         try:
@@ -59,49 +57,14 @@ if query:
         except Exception as e:
             serp_ans = f"⚠️ SerpAPI Error: {e}"
 
-        # ------------------- COHERE (Chat API - final working spec) -------------------
-        try:
-            payload = {
-                "model": "command-r-plus",
-                "message": f"Summarize this neutrally and factually: {query}",
-                "temperature": 0.7
-            }
-
-            coh_resp = requests.post(
-                "https://api.cohere.ai/v1/chat",
-                headers={
-                    "Authorization": f"Bearer {COHERE_KEY}",
-                    "Content-Type": "application/json"
-                },
-                json=payload,
-                timeout=30
-            )
-
-            if coh_resp.ok:
-                coh_data = coh_resp.json()
-                if "message" in coh_data and "content" in coh_data["message"]:
-                    content_list = coh_data["message"]["content"]
-                    if content_list and isinstance(content_list, list):
-                        coh_ans = content_list[0].get("text", "No response")
-                    else:
-                        coh_ans = "No content in response."
-                else:
-                    coh_ans = coh_data.get("text", "No response")
-            else:
-                coh_ans = f"⚠️ Cohere Error: {coh_resp.text}"
-        except Exception as e:
-            coh_ans = f"⚠️ Cohere Error: {e}"
-
         # ------------------- FUSION -------------------
         fused = (
             f"### 🧠 Vedra Unified Insight\n\n"
             f"**OpenAI says:** {gpt_ans}\n\n"
             f"**Web (SerpAPI) adds:** {serp_ans}\n\n"
-            f"**Cohere suggests:** {coh_ans or 'No response from Cohere.'}\n\n"
             f"**Fusion Summary:**\n"
             f"{gpt_ans.split('.')[0]}. "
-            f"{serp_ans.split('.')[0] if serp_ans else ''}. "
-            f"{coh_ans.split('.')[0] if coh_ans else ''}."
+            f"{serp_ans.split('.')[0] if serp_ans else ''}."
         )
 
     # ------------------- DISPLAY -------------------
@@ -111,13 +74,12 @@ if query:
     # Collapsible source info
     with st.expander("🔗 Engines & Sources Used"):
         st.markdown("""
-        - 🧠 **OpenAI GPT-3.5** – Deep reasoning and creative synthesis  
-        - 🌍 **SerpAPI (Google)** – Live web grounding and factual context  
-        - 🪶 **Cohere Chat API** – Neutral summarization and tone balancing  
+        - 🧠 **OpenAI GPT-3.5** – Deep reasoning and synthesis  
+        - 🌍 **SerpAPI (Google)** – Live web grounding and factual verification  
         """)
 
     st.markdown(f"[Explore *{query}* on Google](https://www.google.com/search?q={query.replace(' ','+')})")
     st.markdown(f"[Wikipedia: {query}](https://en.wikipedia.org/wiki/{query.replace(' ','_')})")
 
 st.markdown("---")
-st.caption("© 2025 Vedra AI | Multi-AI Unified Search Prototype | Privacy-First Design")
+st.caption("© 2025 Vedra AI | Unified Search Prototype | Privacy-First Design")
