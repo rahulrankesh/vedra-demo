@@ -26,29 +26,47 @@ privacy = st.toggle("Privacy Mode (no data stored)", value=True)
 if query:
     with st.spinner("Gathering intelligence from multiple AIs..."):
 
+        # Define defaults (prevents NameError)
         gpt_ans = ""
         serp_ans = ""
-        coh_ans = ""   # <— this line prevents NameError
+        coh_ans = ""
 
-        # --- OpenAI ---
+        # ------------------- OPENAI -------------------
         try:
-            ...
+            gpt_resp = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": query}],
+                max_tokens=250,
+                temperature=0.7,
+            )
+            gpt_ans = gpt_resp.choices[0].message.content.strip()
         except Exception as e:
             gpt_ans = f"⚠️ OpenAI Error: {e}"
 
-        # --- SerpAPI ---
+        # ------------------- SERPAPI (Google Web grounding) -------------------
         try:
-            ...
+            params = {"engine": "google", "q": query, "api_key": SERPAPI_KEY}
+            serp_resp = requests.get("https://serpapi.com/search", params=params, timeout=30)
+            if serp_resp.ok:
+                data = serp_resp.json()
+                if "organic_results" in data and len(data["organic_results"]) > 0:
+                    top = data["organic_results"][0]
+                    serp_ans = f"{top.get('title','')}: {top.get('snippet','')}"
+                else:
+                    serp_ans = "No web results found."
+            else:
+                serp_ans = f"⚠️ SerpAPI Error: {serp_resp.text}"
         except Exception as e:
             serp_ans = f"⚠️ SerpAPI Error: {e}"
 
-        # --- Cohere (Chat API final fixed version) ---
+        # ------------------- COHERE (Chat API - final working spec) -------------------
         try:
             payload = {
                 "model": "command-r-plus",
                 "message": f"Summarize this neutrally and factually: {query}",
                 "temperature": 0.7
             }
+
             coh_resp = requests.post(
                 "https://api.cohere.ai/v1/chat",
                 headers={
@@ -58,6 +76,7 @@ if query:
                 json=payload,
                 timeout=30
             )
+
             if coh_resp.ok:
                 coh_data = coh_resp.json()
                 if "message" in coh_data and "content" in coh_data["message"]:
@@ -73,7 +92,7 @@ if query:
         except Exception as e:
             coh_ans = f"⚠️ Cohere Error: {e}"
 
-        # --- Fusion and display ---
+        # ------------------- FUSION -------------------
         fused = (
             f"### 🧠 Vedra Unified Insight\n\n"
             f"**OpenAI says:** {gpt_ans}\n\n"
