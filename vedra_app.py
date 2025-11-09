@@ -54,39 +54,40 @@ if query:
         except Exception as e:
             serp_ans = f"⚠️ SerpAPI Error: {e}"
 
-        # ------------------- COHERE (Chat API - Corrected Request Format) -------------------
-        coh_ans = ""  # default to prevent NameError
-        try:
-            payload = {
-                "model": "command-r-plus",
-                "message": {
-                    "role": "user",
-                    "content": f"Summarize this neutrally and factually: {query}"
-                },
-                "temperature": 0.7
-            }
-
-            coh_resp = requests.post(
-                "https://api.cohere.ai/v1/chat",
-                headers={
-                    "Authorization": f"Bearer {COHERE_KEY}",
-                    "Content-Type": "application/json"
-                },
-                json=payload,
-                timeout=30
-            )
-
-            if coh_resp.ok:
-                coh_data = coh_resp.json()
-                coh_ans = (
-                    coh_data.get("message", {})
-                    .get("content", [{}])[0]
-                    .get("text", "No response")
+               # ------------------- COHERE (Chat API - Final Fixed Version) -------------------
+            coh_ans = ""  # default to prevent NameError
+            try:
+                payload = {
+                    "model": "command-r-plus",
+                    "message": f"Summarize this neutrally and factually: {query}",
+                    "temperature": 0.7
+                }
+            
+                coh_resp = requests.post(
+                    "https://api.cohere.ai/v1/chat",
+                    headers={
+                        "Authorization": f"Bearer {COHERE_KEY}",
+                        "Content-Type": "application/json"
+                    },
+                    json=payload,
+                    timeout=30
                 )
-            else:
-                coh_ans = f"⚠️ Cohere Error: {coh_resp.text}"
-        except Exception as e:
-            coh_ans = f"⚠️ Cohere Error: {e}"
+            
+                if coh_resp.ok:
+                    coh_data = coh_resp.json()
+                    # Extract the text safely
+                    if "message" in coh_data and "content" in coh_data["message"]:
+                        content_list = coh_data["message"]["content"]
+                        if content_list and isinstance(content_list, list):
+                            coh_ans = content_list[0].get("text", "No response")
+                        else:
+                            coh_ans = "No content in response."
+                    else:
+                        coh_ans = coh_data.get("text", "No response")
+                else:
+                    coh_ans = f"⚠️ Cohere Error: {coh_resp.text}"
+            except Exception as e:
+                coh_ans = f"⚠️ Cohere Error: {e}"
 
         # ------------------- FUSION -------------------
         fused = (
