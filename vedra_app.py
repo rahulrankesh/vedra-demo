@@ -8,7 +8,7 @@ from openai import OpenAI
 
 st.set_page_config(page_title="Vedra – Unified AI Search", layout="centered")
 
-st.image("https://i.ibb.co/TM4HQ2P/vedra-logo.png", width=160)
+st.image("https://www.google.com/url?sa=i&url=https%3A%2F%2Fvedragroup.co.uk%2F&psig=AOvVaw3Xo88H3JqJG2EGBsyMgbXI&ust=1762769951126000&source=images&cd=vfe&opi=89978449&ved=0CBIQjRxqFwoTCLD_vvvr5JADFQAAAAAdAAAAABAE", width=160)
 st.title("Vedra 🔍")
 st.caption("One Answer. Many Minds.")
 
