@@ -38,6 +38,7 @@ if query:
             gpt_ans = f"⚠️ OpenAI Error: {e}"
 
         # ------------------- PERPLEXITY -------------------
+        # ------------------- PERPLEXITY -------------------
         try:
             pplx_resp = requests.post(
                 "https://api.perplexity.ai/chat/completions",
@@ -46,7 +47,7 @@ if query:
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "sonar-small-chat",
+                    "model": "sonar-small-online",
                     "messages": [{"role": "user", "content": query}],
                 },
                 timeout=60,
@@ -60,24 +61,26 @@ if query:
 
 
         # ------------------- GEMINI -------------------
+        # ------------------- GEMINI -------------------
         try:
             gem_resp = requests.post(
                 f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}",
                 json={
                     "contents": [
-                        {"parts": [{"text": f"{query}. Give a neutral factual summary suitable for public presentation."}]}
+                        {"parts": [{"text": f"{query}. Summarize neutrally and factually."}]}
                     ]
                 },
                 timeout=60,
             )
             data = gem_resp.json()
-            if "candidates" in data and len(data["candidates"]) > 0:
+            if "candidates" in data and data["candidates"]:
                 gem_ans = data["candidates"][0]["content"]["parts"][0]["text"]
+            elif "promptFeedback" in data:
+                gem_ans = f"Gemini filtered output: {data['promptFeedback'].get('safetyRatings', '')}"
             else:
-                gem_ans = "No response (filtered or empty)."
+                gem_ans = "Gemini returned no content."
         except Exception as e:
             gem_ans = f"⚠️ Gemini Error: {e}"
-
 
         # ------------------- FUSION -------------------
         fused = (
