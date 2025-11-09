@@ -8,7 +8,7 @@ from openai import OpenAI
 
 st.set_page_config(page_title="Vedra – Unified AI Search", layout="wide")
 
-# Logo + Header
+# Header
 col1, col2 = st.columns([1, 5])
 with col1:
     st.image("https://i.ibb.co/TM4HQ2P/vedra-logo.png", width=100)
@@ -33,6 +33,9 @@ if query:
         gpt_ans = ""
         serp_ans = ""
         serp_data = {}
+        image_urls = []
+        video_results = []
+        news_results = []
 
         # ------------------- OPENAI -------------------
         try:
@@ -46,7 +49,7 @@ if query:
         except Exception as e:
             gpt_ans = f"⚠️ OpenAI Error: {e}"
 
-        # ------------------- SERPAPI (Google Web grounding) -------------------
+        # ------------------- SERPAPI Web Snippets -------------------
         try:
             params = {"engine": "google", "q": query, "api_key": SERPAPI_KEY}
             serp_resp = requests.get("https://serpapi.com/search", params=params, timeout=30)
@@ -62,8 +65,7 @@ if query:
         except Exception as e:
             serp_ans = f"⚠️ SerpAPI Error: {e}"
 
-        # ------------------- IMAGE SEARCH -------------------
-        image_urls = []
+        # ------------------- IMAGES -------------------
         try:
             img_params = {"engine": "google", "q": query, "tbm": "isch", "api_key": SERPAPI_KEY}
             img_resp = requests.get("https://serpapi.com/search", params=img_params, timeout=30)
@@ -73,7 +75,27 @@ if query:
         except Exception:
             pass
 
-        # ------------------- FOLLOW-UP SUGGESTIONS -------------------
+        # ------------------- YOUTUBE VIDEOS -------------------
+        try:
+            vid_params = {"engine": "google", "q": query, "tbm": "vid", "api_key": SERPAPI_KEY}
+            vid_resp = requests.get("https://serpapi.com/search", params=vid_params, timeout=30)
+            if vid_resp.ok:
+                vid_data = vid_resp.json()
+                video_results = vid_data.get("video_results", [])[:3]
+        except Exception:
+            pass
+
+        # ------------------- NEWS HEADLINES -------------------
+        try:
+            news_params = {"engine": "google", "q": query, "tbm": "nws", "api_key": SERPAPI_KEY}
+            news_resp = requests.get("https://serpapi.com/search", params=news_params, timeout=30)
+            if news_resp.ok:
+                news_data = news_resp.json()
+                news_results = news_data.get("news_results", [])[:3]
+        except Exception:
+            pass
+
+        # ------------------- FOLLOW-UP QUESTIONS -------------------
         follow_ups = []
         try:
             followup = client.chat.completions.create(
@@ -104,6 +126,24 @@ if query:
         st.markdown("### 📸 Related Images")
         st.image(image_urls, width=250, caption=[f"Image {i+1}" for i in range(len(image_urls))])
 
+    # ------------------- VIDEOS -------------------
+    if video_results:
+        st.markdown("### 🎬 Related Videos")
+        for v in video_results:
+            title = v.get("title", "Video")
+            link = v.get("link")
+            thumbnail = v.get("thumbnail")
+            channel = v.get("channel", {}).get("name", "")
+            st.markdown(f"**[{title}]({link})**  \n🎥 {channel}")
+            if thumbnail:
+                st.image(thumbnail, width=300)
+
+    # ------------------- NEWS -------------------
+    if news_results:
+        st.markdown("### 🗞️ Recent News")
+        for n in news_results:
+            st.markdown(f"- [{n.get('title')}]({n.get('link')})")
+
     # ------------------- LINKS -------------------
     if "organic_results" in serp_data:
         st.markdown("### 🔗 Top Web Sources")
@@ -122,11 +162,11 @@ if query:
     with st.expander("🔗 Engines & Sources Used"):
         st.markdown("""
         - 🧠 **OpenAI GPT-3.5** – Deep reasoning and synthesis  
-        - 🌍 **SerpAPI (Google)** – Live web grounding, images, and source links  
+        - 🌍 **SerpAPI (Google)** – Web grounding, images, videos, and news  
         """)
 
     st.markdown(f"[Explore *{query}* on Google](https://www.google.com/search?q={query.replace(' ','+')})")
     st.markdown(f"[Wikipedia: {query}](https://en.wikipedia.org/wiki/{query.replace(' ','_')})")
 
 st.markdown("---")
-st.caption("© 2025 Vedra AI | Visual Multi-AI Search Prototype | Privacy-First Design")
+st.caption("© 2025 Vedra AI | Multi-Media AI Search Prototype | Privacy-First Design")
