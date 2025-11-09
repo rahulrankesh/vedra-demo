@@ -26,70 +26,54 @@ privacy = st.toggle("Privacy Mode (no data stored)", value=True)
 if query:
     with st.spinner("Gathering intelligence from multiple AIs..."):
 
-        # ------------------- OPENAI -------------------
+        gpt_ans = ""
+        serp_ans = ""
+        coh_ans = ""   # <— this line prevents NameError
+
+        # --- OpenAI ---
         try:
-            gpt_resp = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": query}],
-                max_tokens=250,
-                temperature=0.7,
-            )
-            gpt_ans = gpt_resp.choices[0].message.content.strip()
+            ...
         except Exception as e:
             gpt_ans = f"⚠️ OpenAI Error: {e}"
 
-        # ------------------- SERPAPI (Google Web grounding) -------------------
+        # --- SerpAPI ---
         try:
-            params = {"engine": "google", "q": query, "api_key": SERPAPI_KEY}
-            serp_resp = requests.get("https://serpapi.com/search", params=params, timeout=30)
-            if serp_resp.ok:
-                data = serp_resp.json()
-                if "organic_results" in data and len(data["organic_results"]) > 0:
-                    top = data["organic_results"][0]
-                    serp_ans = f"{top.get('title','')}: {top.get('snippet','')}"
-                else:
-                    serp_ans = "No web results found."
-            else:
-                serp_ans = f"⚠️ SerpAPI Error: {serp_resp.text}"
+            ...
         except Exception as e:
             serp_ans = f"⚠️ SerpAPI Error: {e}"
 
-               # ------------------- COHERE (Chat API - Final Fixed Version) -------------------
-            coh_ans = ""  # default to prevent NameError
-            try:
-                payload = {
-                    "model": "command-r-plus",
-                    "message": f"Summarize this neutrally and factually: {query}",
-                    "temperature": 0.7
-                }
-            
-                coh_resp = requests.post(
-                    "https://api.cohere.ai/v1/chat",
-                    headers={
-                        "Authorization": f"Bearer {COHERE_KEY}",
-                        "Content-Type": "application/json"
-                    },
-                    json=payload,
-                    timeout=30
-                )
-            
-                if coh_resp.ok:
-                    coh_data = coh_resp.json()
-                    # Extract the text safely
-                    if "message" in coh_data and "content" in coh_data["message"]:
-                        content_list = coh_data["message"]["content"]
-                        if content_list and isinstance(content_list, list):
-                            coh_ans = content_list[0].get("text", "No response")
-                        else:
-                            coh_ans = "No content in response."
+        # --- Cohere (Chat API final fixed version) ---
+        try:
+            payload = {
+                "model": "command-r-plus",
+                "message": f"Summarize this neutrally and factually: {query}",
+                "temperature": 0.7
+            }
+            coh_resp = requests.post(
+                "https://api.cohere.ai/v1/chat",
+                headers={
+                    "Authorization": f"Bearer {COHERE_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json=payload,
+                timeout=30
+            )
+            if coh_resp.ok:
+                coh_data = coh_resp.json()
+                if "message" in coh_data and "content" in coh_data["message"]:
+                    content_list = coh_data["message"]["content"]
+                    if content_list and isinstance(content_list, list):
+                        coh_ans = content_list[0].get("text", "No response")
                     else:
-                        coh_ans = coh_data.get("text", "No response")
+                        coh_ans = "No content in response."
                 else:
-                    coh_ans = f"⚠️ Cohere Error: {coh_resp.text}"
-            except Exception as e:
-                coh_ans = f"⚠️ Cohere Error: {e}"
+                    coh_ans = coh_data.get("text", "No response")
+            else:
+                coh_ans = f"⚠️ Cohere Error: {coh_resp.text}"
+        except Exception as e:
+            coh_ans = f"⚠️ Cohere Error: {e}"
 
-        # ------------------- FUSION -------------------
+        # --- Fusion and display ---
         fused = (
             f"### 🧠 Vedra Unified Insight\n\n"
             f"**OpenAI says:** {gpt_ans}\n\n"
