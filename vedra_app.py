@@ -37,60 +37,60 @@ if query:
         except Exception as e:
             gpt_ans = f"⚠️ OpenAI Error: {e}"
 
-        # ------------------- PERPLEXITY -------------------
-        # ------------------- PERPLEXITY -------------------
-        try:
-            pplx_resp = requests.post(
-                "https://api.perplexity.ai/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {PERPLEXITY_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": "sonar-small-online",
-                    "messages": [{"role": "user", "content": query}],
-                },
-                timeout=60,
+               # ------------------- SERPAPI (Web grounding) -------------------
+                try:
+                    serp_key = st.secrets.get("SERPAPI_KEY") or os.getenv("SERPAPI_KEY")
+                    params = {
+                        "engine": "google",
+                        "q": query,
+                        "api_key": serp_key
+                    }
+                    serp_resp = requests.get("https://serpapi.com/search", params=params, timeout=30)
+                    if serp_resp.ok:
+                        data = serp_resp.json()
+                        if "organic_results" in data and len(data["organic_results"]) > 0:
+                            top = data["organic_results"][0]
+                            serp_ans = f"{top.get('title','')}: {top.get('snippet','')}"
+                        else:
+                            serp_ans = "No web results found."
+                    else:
+                        serp_ans = f"⚠️ SerpAPI Error: {serp_resp.text}"
+                except Exception as e:
+                    serp_ans = f"⚠️ SerpAPI Error: {e}"
+ # ------------------- COHERE (summarization / second LLM) -------------------
+            # Requires COHERE_API_KEY in secrets
+            try:
+                coh_key = st.secrets.get("COHERE_API_KEY") or os.getenv("COHERE_API_KEY")
+                coh_resp = requests.post(
+                    "https://api.cohere.ai/generate",
+                    headers={"Authorization": f"Bearer {coh_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": "command-xlarge-nightly",
+                        "prompt": query,
+                        "max_tokens": 200,
+                        "temperature": 0.7
+                    },
+                    timeout=30
+                )
+                if coh_resp.ok:
+                    coh_data = coh_resp.json()
+                    coh_ans = coh_data.get("generations", [{}])[0].get("text", "No response")
+                else:
+                    coh_ans = f"⚠️ Cohere Error: {coh_resp.text}"
+            except Exception as e:
+                coh_ans = f"⚠️ Cohere Error: {e}"
+            
+            # ------------------- FUSION (show three engines: OpenAI, Bing, Cohere) -------------------
+            fused = (
+                f"### 🧠 Vedra Unified Insight\n\n"
+                f"**OpenAI says:** {gpt_ans}\n\n"
+                f"**Web grounding (Bing) adds:** {bing_ans}\n\n"
+                f"**Cohere adds:** {coh_ans}\n\n"
+                f"**Web (SerpAPI) adds:** {serp_ans}\n\n"
+                f"**Fusion Summary:**\n"
+                f"{gpt_ans.split('.')[0]}. {bing_ans.split('.')[0] if bing_ans else ''} {coh_ans.split('.')[0] if coh_ans else ''}"
             )
-            if pplx_resp.ok:
-                pplx_ans = pplx_resp.json()["choices"][0]["message"]["content"]
-            else:
-                pplx_ans = f"⚠️ Perplexity Error: {pplx_resp.text}"
-        except Exception as e:
-            pplx_ans = f"⚠️ Perplexity Error: {e}"
 
-
-        # ------------------- GEMINI -------------------
-        # ------------------- GEMINI -------------------
-        try:
-            gem_resp = requests.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}",
-                json={
-                    "contents": [
-                        {"parts": [{"text": f"{query}. Summarize neutrally and factually."}]}
-                    ]
-                },
-                timeout=60,
-            )
-            data = gem_resp.json()
-            if "candidates" in data and data["candidates"]:
-                gem_ans = data["candidates"][0]["content"]["parts"][0]["text"]
-            elif "promptFeedback" in data:
-                gem_ans = f"Gemini filtered output: {data['promptFeedback'].get('safetyRatings', '')}"
-            else:
-                gem_ans = "Gemini returned no content."
-        except Exception as e:
-            gem_ans = f"⚠️ Gemini Error: {e}"
-
-        # ------------------- FUSION -------------------
-        fused = (
-            f"### 🧠 Vedra Unified Insight\n\n"
-            f"**OpenAI says:** {gpt_ans}\n\n"
-            f"**Perplexity adds:** {pplx_ans}\n\n"
-            f"**Gemini suggests:** {gem_ans}\n\n"
-            f"**Fusion Summary:**\n"
-            f"{gpt_ans.split('.')[0]}. {pplx_ans.split('.')[0]}. {gem_ans.split('.')[0]}."
-        )
 
     st.markdown(fused)
     st.success("Verified by multiple sources ✅")
