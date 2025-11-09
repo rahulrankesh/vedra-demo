@@ -59,28 +59,38 @@ if query:
             serp_ans = f"⚠️ SerpAPI Error: {e}"
 
         # ------------------- COHERE -------------------
+        # ------------------- COHERE (Chat API - Summarization / Neutral Tone) -------------------
         try:
             coh_resp = requests.post(
-                "https://api.cohere.ai/generate",
+                "https://api.cohere.ai/v1/chat",
                 headers={
                     "Authorization": f"Bearer {COHERE_KEY}",
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": "command-xlarge-nightly",
-                    "prompt": f"Summarize this neutrally:\n{query}",
-                    "max_tokens": 200,
+                    "model": "command-r-plus",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": f"Summarize this neutrally and factually: {query}"
+                        }
+                    ],
                     "temperature": 0.7
                 },
                 timeout=30
             )
             if coh_resp.ok:
                 coh_data = coh_resp.json()
-                coh_ans = coh_data.get("generations", [{}])[0].get("text", "No response")
+                # Cohere Chat API returns text under response['message']['content']
+                if "message" in coh_data and "content" in coh_data["message"]:
+                    coh_ans = coh_data["message"]["content"][0].get("text", "No response")
+                else:
+                    coh_ans = coh_data.get("text", "No response")
             else:
                 coh_ans = f"⚠️ Cohere Error: {coh_resp.text}"
         except Exception as e:
             coh_ans = f"⚠️ Cohere Error: {e}"
+
 
         # ------------------- FUSION -------------------
         fused = (
