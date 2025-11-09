@@ -46,7 +46,7 @@ if query:
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "pplx-70b-online",
+                    "model": "sonar-small-chat",
                     "messages": [{"role": "user", "content": query}],
                 },
                 timeout=60,
@@ -58,11 +58,16 @@ if query:
         except Exception as e:
             pplx_ans = f"⚠️ Perplexity Error: {e}"
 
+
         # ------------------- GEMINI -------------------
         try:
             gem_resp = requests.post(
                 f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}",
-                json={"contents": [{"parts": [{"text": query}]}]},
+                json={
+                    "contents": [
+                        {"parts": [{"text": f"{query}. Give a neutral factual summary suitable for public presentation."}]}
+                    ]
+                },
                 timeout=60,
             )
             data = gem_resp.json()
