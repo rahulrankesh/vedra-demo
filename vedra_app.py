@@ -46,7 +46,7 @@ if query:
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "pplx-7b-online",
+                    "model": "pplx-70b-online",
                     "messages": [{"role": "user", "content": query}],
                 },
                 timeout=60,
@@ -66,9 +66,13 @@ if query:
                 timeout=60,
             )
             data = gem_resp.json()
-            gem_ans = data["candidates"][0]["content"]["parts"][0]["text"]
+            if "candidates" in data and len(data["candidates"]) > 0:
+                gem_ans = data["candidates"][0]["content"]["parts"][0]["text"]
+            else:
+                gem_ans = "No response (filtered or empty)."
         except Exception as e:
             gem_ans = f"⚠️ Gemini Error: {e}"
+
 
         # ------------------- FUSION -------------------
         fused = (
