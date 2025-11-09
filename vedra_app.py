@@ -41,7 +41,7 @@ if query:
         # --- Hugging Face response
         try:
             hf_resp = requests.post(
-                "https://api-inference.huggingface.co/models/google/flan-t5-large",
+                "https://api-inference.huggingface.co/models/facebook/bart-large-cnn",
                 headers={"Authorization": f"Bearer {HF_KEY}"},
                 json={"inputs": query},
                 timeout=60
