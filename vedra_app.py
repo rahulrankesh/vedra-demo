@@ -1,172 +1,214 @@
+import os
+from urllib.parse import quote_plus
+
+import requests
 import streamlit as st
-import requests, os
 from openai import OpenAI
 
-# --------------------------
-# Vedra: One Answer. Many Minds.
-# --------------------------
+from vedra_utils import normalise_video_result, safe_https_url
 
-st.set_page_config(page_title="Vedra – Unified AI Search", layout="wide")
+SERPAPI_URL = "https://serpapi.com/search.json"
+REQUEST_TIMEOUT = 20
+MAX_SOURCES = 5
+
+st.set_page_config(page_title="Vedra – Unified AI Search", page_icon="🔎", layout="wide")
+
+
+def get_secret(name: str) -> str | None:
+    """Read a secret from Streamlit secrets first, then the process environment."""
+    try:
+        value = st.secrets.get(name)
+    except Exception:
+        value = None
+    return value or os.getenv(name)
+
+
+OPENAI_KEY = get_secret("OPENAI_API_KEY")
+SERPAPI_KEY = get_secret("SERPAPI_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 # Header
-col1, col2 = st.columns([1, 5])
-with col1:
-    st.image("https://i.ibb.co/TM4HQ2P/vedra-logo.png", width=100)
-with col2:
-    st.markdown("<h1 style='margin-bottom:0;'>Vedra 🔍</h1>", unsafe_allow_html=True)
-    st.caption("One Answer. Many Minds.")
+st.title("Vedra 🔎")
+st.caption("One Answer. Many Minds. — AI answers grounded in discoverable sources.")
 
-# Load keys
-OPENAI_KEY = st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
-SERPAPI_KEY = st.secrets.get("SERPAPI_KEY") or os.getenv("SERPAPI_KEY")
+with st.expander("Privacy and source transparency", expanded=False):
+    st.write(
+        "Vedra does not currently save searches or answers to its own database. "
+        "When you search, your query is sent to OpenAI to generate an answer and, "
+        "when SERPAPI_KEY is configured, to SerpAPI to retrieve web and media results. "
+        "Those providers process requests under their own terms and privacy policies. "
+        "The privacy control in the earlier prototype did not change data handling, "
+        "so it has been replaced with this explicit disclosure."
+    )
+
+if not OPENAI_KEY:
+    st.error(
+        "OpenAI is not configured. Add OPENAI_API_KEY to the Streamlit app secrets "
+        "or the deployment environment before running searches."
+    )
+    st.stop()
 
 client = OpenAI(api_key=OPENAI_KEY)
 
-# Input field
-query = st.text_input("Ask Vedra anything:")
-privacy = st.toggle("Privacy Mode (no data stored)", value=True)
 
-if query:
-    with st.spinner("Gathering intelligence from multiple AIs..."):
+def search_web(query: str) -> dict:
+    if not SERPAPI_KEY:
+        return {}
+    try:
+        response = requests.get(
+            SERPAPI_URL,
+            params={"engine": "google", "q": query, "api_key": SERPAPI_KEY},
+            timeout=REQUEST_TIMEOUT,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {}
+    except (requests.RequestException, ValueError):
+        return {}
 
-        # Define defaults
-        gpt_ans = ""
-        serp_ans = ""
-        serp_data = {}
-        image_urls = []
-        video_results = []
-        news_results = []
 
-        # ------------------- OPENAI -------------------
+def search_media(query: str, vertical: str) -> dict:
+    if not SERPAPI_KEY:
+        return {}
+    try:
+        response = requests.get(
+            SERPAPI_URL,
+            params={
+                "engine": "google",
+                "q": query,
+                "tbm": vertical,
+                "api_key": SERPAPI_KEY,
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {}
+    except (requests.RequestException, ValueError):
+        return {}
+
+
+def make_answer(query: str, sources: list[dict]) -> str:
+    source_context = "\n".join(
+        f"[{i + 1}] {item.get('title', 'Untitled')}: {item.get('snippet', '')} "
+        f"({item.get('link', '')})"
+        for i, item in enumerate(sources)
+    )
+    if not source_context:
+        source_context = "No external web snippets were available for this query."
+
+    response = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are Vedra, a careful research and learning assistant. "
+                    "Answer clearly and directly. Distinguish established facts from "
+                    "uncertainty. Use the supplied web snippets as evidence, cite them "
+                    "inline as [1], [2], etc., and never claim independent verification "
+                    "when the snippets do not support it. If no snippets are supplied, "
+                    "say that the answer is not web-grounded."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Question: {query}\n\nWeb snippets:\n{source_context}",
+            },
+        ],
+        temperature=0.3,
+        max_tokens=900,
+    )
+    content = response.choices[0].message.content
+    return content.strip() if content else "No answer was returned by the model."
+
+
+with st.form("search_form"):
+    query = st.text_input("Ask Vedra anything:", placeholder="e.g. How does UPI settlement work?")
+    submitted = st.form_submit_button("Search Vedra", type="primary")
+
+if submitted:
+    query = query.strip()
+    if not query:
+        st.warning("Enter a question to search.")
+        st.stop()
+
+    with st.spinner("Searching sources and synthesizing an answer…"):
+        web_data = search_web(query)
+        organic = web_data.get("organic_results", [])
+        sources = [
+            item
+            for item in organic
+            if isinstance(item, dict) and safe_https_url(item.get("link"))
+        ][:MAX_SOURCES]
+
         try:
-            gpt_resp = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": query}],
-                max_tokens=300,
-                temperature=0.7,
+            answer = make_answer(query, sources)
+        except Exception:
+            st.error(
+                "The answer could not be generated. Check the OpenAI API configuration "
+                "and account availability, then try again."
             )
-            gpt_ans = gpt_resp.choices[0].message.content.strip()
-        except Exception as e:
-            gpt_ans = f"⚠️ OpenAI Error: {e}"
+            st.stop()
 
-        # ------------------- SERPAPI Web Snippets -------------------
-        try:
-            params = {"engine": "google", "q": query, "api_key": SERPAPI_KEY}
-            serp_resp = requests.get("https://serpapi.com/search", params=params, timeout=30)
-            if serp_resp.ok:
-                serp_data = serp_resp.json()
-                if "organic_results" in serp_data and len(serp_data["organic_results"]) > 0:
-                    top = serp_data["organic_results"][0]
-                    serp_ans = f"{top.get('title','')}: {top.get('snippet','')}"
-                else:
-                    serp_ans = "No web results found."
-            else:
-                serp_ans = f"⚠️ SerpAPI Error: {serp_resp.text}"
-        except Exception as e:
-            serp_ans = f"⚠️ SerpAPI Error: {e}"
+        image_data = search_media(query, "isch") if SERPAPI_KEY else {}
+        video_data = search_media(query, "vid") if SERPAPI_KEY else {}
+        news_data = search_media(query, "nws") if SERPAPI_KEY else {}
 
-        # ------------------- IMAGES -------------------
-        try:
-            img_params = {"engine": "google", "q": query, "tbm": "isch", "api_key": SERPAPI_KEY}
-            img_resp = requests.get("https://serpapi.com/search", params=img_params, timeout=30)
-            if img_resp.ok:
-                img_data = img_resp.json()
-                image_urls = [img["original"] for img in img_data.get("images_results", [])[:4]]
-        except Exception:
-            pass
+    st.subheader("Vedra's answer")
+    st.markdown(answer)
 
-        # ------------------- YOUTUBE VIDEOS -------------------
-        try:
-            vid_params = {"engine": "google", "q": query, "tbm": "vid", "api_key": SERPAPI_KEY}
-            vid_resp = requests.get("https://serpapi.com/search", params=vid_params, timeout=30)
-            if vid_resp.ok:
-                vid_data = vid_resp.json()
-                video_results = vid_data.get("video_results", [])[:3]
-        except Exception:
-            pass
-
-        # ------------------- NEWS HEADLINES -------------------
-        try:
-            news_params = {"engine": "google", "q": query, "tbm": "nws", "api_key": SERPAPI_KEY}
-            news_resp = requests.get("https://serpapi.com/search", params=news_params, timeout=30)
-            if news_resp.ok:
-                news_data = news_resp.json()
-                news_results = news_data.get("news_results", [])[:3]
-        except Exception:
-            pass
-
-        # ------------------- FOLLOW-UP QUESTIONS -------------------
-        follow_ups = []
-        try:
-            followup = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": f"Suggest 3 concise follow-up questions related to: {query}"}],
-                max_tokens=60
-            )
-            follow_ups = [q.strip("•- ") for q in followup.choices[0].message.content.split("\n") if q.strip()]
-        except Exception:
-            pass
-
-        # ------------------- FUSION -------------------
-        fused = (
-            f"### 🧠 Vedra Unified Insight\n\n"
-            f"**OpenAI says:** {gpt_ans}\n\n"
-            f"**Web (SerpAPI) adds:** {serp_ans}\n\n"
-            f"**Fusion Summary:**\n"
-            f"{gpt_ans.split('.')[0]}. "
-            f"{serp_ans.split('.')[0] if serp_ans else ''}."
+    if sources:
+        st.caption("Web-grounded using the following search results. These sources have not been independently fact-checked.")
+        with st.expander("Web sources", expanded=True):
+            for index, item in enumerate(sources, start=1):
+                title = item.get("title") or item.get("link") or f"Source {index}"
+                st.markdown(f"[{index}. {title}]({item['link']})")
+                if item.get("snippet"):
+                    st.caption(item["snippet"])
+    else:
+        st.info(
+            "No web sources were available. This answer is generated by the AI model "
+            "and is not grounded in live search results."
         )
 
-    # ------------------- DISPLAY -------------------
-    st.markdown(fused)
-    st.success("Verified by multiple sources ✅")
-
-    # ------------------- IMAGES -------------------
+    images = image_data.get("images_results", [])
+    image_urls = [
+        safe_https_url(item.get("thumbnail") or item.get("original"))
+        for item in images
+        if isinstance(item, dict)
+    ]
+    image_urls = [url for url in image_urls if url][:4]
     if image_urls:
-        st.markdown("### 📸 Related Images")
-        st.image(image_urls, width=250, caption=[f"Image {i+1}" for i in range(len(image_urls))])
+        st.subheader("Related images")
+        st.image(image_urls, use_container_width=True)
 
-    # ------------------- VIDEOS -------------------
-    if video_results:
-        st.markdown("### 🎬 Related Videos")
-        for v in video_results:
-            title = v.get("title", "Video")
-            link = v.get("link")
-            thumbnail = v.get("thumbnail")
-            channel = v.get("channel", {}).get("name", "")
-            st.markdown(f"**[{title}]({link})**  \n🎥 {channel}")
-            if thumbnail:
-                st.image(thumbnail, width=300)
+    videos = video_data.get("video_results", [])
+    normalized_videos = [
+        normalise_video_result(item)
+        for item in videos
+    ]
+    normalized_videos = [item for item in normalized_videos if item]
+    if normalized_videos:
+        st.subheader("Related videos")
+        for item in normalized_videos[:3]:
+            if item.get("thumbnail"):
+                st.image(item["thumbnail"], width=260)
+            st.markdown(f"[{item.get('title') or 'Watch video'}]({item['link']})")
+            if item.get("channel"):
+                st.caption(item["channel"])
 
-    # ------------------- NEWS -------------------
-    if news_results:
-        st.markdown("### 🗞️ Recent News")
-        for n in news_results:
-            st.markdown(f"- [{n.get('title')}]({n.get('link')})")
+    news = news_data.get("news_results", [])
+    valid_news = [
+        item for item in news
+        if isinstance(item, dict) and safe_https_url(item.get("link"))
+    ][:3]
+    if valid_news:
+        st.subheader("Recent news")
+        for item in valid_news:
+            st.markdown(f"- [{item.get('title') or 'News article'}]({item['link']})")
 
-    # ------------------- LINKS -------------------
-    if "organic_results" in serp_data:
-        st.markdown("### 🔗 Top Web Sources")
-        for r in serp_data["organic_results"][:3]:
-            st.markdown(f"- [{r.get('title')}]({r.get('link')})")
+    st.caption("Vedra is an AI research assistant. Check important claims against the linked original sources.")
 
-    # ------------------- FOLLOW-UPS -------------------
-    if follow_ups:
-        st.markdown("### 💡 Suggested Next Searches")
-        cols = st.columns(len(follow_ups))
-        for i, f in enumerate(follow_ups):
-            with cols[i]:
-                st.button(f, key=f"followup_{i}")
-
-    # ------------------- INFO -------------------
-    with st.expander("🔗 Engines & Sources Used"):
-        st.markdown("""
-        - 🧠 **OpenAI GPT-3.5** – Deep reasoning and synthesis  
-        - 🌍 **SerpAPI (Google)** – Web grounding, images, videos, and news  
-        """)
-
-    st.markdown(f"[Explore *{query}* on Google](https://www.google.com/search?q={query.replace(' ','+')})")
-    st.markdown(f"[Wikipedia: {query}](https://en.wikipedia.org/wiki/{query.replace(' ','_')})")
-
-st.markdown("---")
-st.caption("© 2025 Vedra AI | Multi-Media AI Search Prototype | Privacy-First Design")
+st.divider()
+st.caption("Vedra AI · Research and learning prototype")
